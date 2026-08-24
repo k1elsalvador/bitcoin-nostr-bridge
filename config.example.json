@@ -1,0 +1,51 @@
+{
+  "network": "bitcoin",
+  "relays": [
+    "wss://your-relay.example"
+  ],
+  "identity": {
+    "nsec": "GENERATE_YOUR_OWN_WITH: node tools/generate-identity.js"
+  },
+  "trust": {
+    "mode": "allowlist",
+    "trustedPubkeys": []
+  },
+  "kinds": {
+    "query": 3920,
+    "reply": 3921
+  },
+  "expirationSeconds": 900,
+  "fulcrum": {
+    "host": "127.0.0.1",
+    "port": 50002,
+    "tls": true,
+    "tlsRejectUnauthorized": true
+  },
+  "bitcoinCore": {
+    "host": "127.0.0.1",
+    "port": 8332,
+    "user": "CHANGE_ME",
+    "password": "CHANGE_ME"
+  },
+  "fee": {
+    "confTargets": {
+      "fastestFee": 2,
+      "halfHourFee": 3,
+      "hourFee": 6,
+      "economyFee": 144
+    },
+    "estimateMode": "CONSERVATIVE",
+    "floorSatVb": 1
+  },
+  "utxo": {
+    "maxPerResponse": 150
+  },
+  "history": {
+    "maxTxs": 500
+  },
+  "xpub": {
+    "gapLimit": 30,
+    "maxGapLimit": 50,
+    "maxAddresses": 100
+  }
+}

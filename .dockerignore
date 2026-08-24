@@ -1,0 +1,9 @@
+node_modules
+config.json
+config.example.json
+test/fixtures/*.json
+logs
+*.log
+.git
+docs
+deploy

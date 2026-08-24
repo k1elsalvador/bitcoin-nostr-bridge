@@ -1,0 +1,14 @@
+services:
+  bridge:
+    build: .
+    container_name: bitcoin-nostr-bridge
+    restart: unless-stopped
+    volumes:
+      - ./config.json:/app/config.json:ro
+    mem_limit: 256m
+    # Reaches Fulcrum/Bitcoin Core over your LAN via Docker's default bridge
+    # network — no extra networking needed if they're on a different host.
+    # If Fulcrum/Core run on the SAME machine as Docker, point config.json's
+    # fulcrum.host/bitcoinCore.host at "host.docker.internal" and uncomment:
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"

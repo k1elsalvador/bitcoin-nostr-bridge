@@ -1,0 +1,42 @@
+{
+  "name": "bitcoin-nostr-bridge",
+  "version": "0.1.0",
+  "description": "Self-hosted Nostr bridge in front of your own Fulcrum + Bitcoin Core node — answers mempool.space-shaped chain queries (address stats/UTXOs, fee estimates, broadcast, tx status, xpub balance) over encrypted Nostr instead of a rate-limited public API. Built for K1 Technology's MiniPlusApp, running on their Bitcoin Vending Machine kiosk fleet, reusable by anyone.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "main": "src/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/k1elsalvador/bitcoin-nostr-bridge.git"
+  },
+  "homepage": "https://github.com/k1elsalvador/bitcoin-nostr-bridge#readme",
+  "bugs": {
+    "url": "https://github.com/k1elsalvador/bitcoin-nostr-bridge/issues"
+  },
+  "keywords": [
+    "bitcoin",
+    "nostr",
+    "electrum",
+    "fulcrum",
+    "bitcoin-core",
+    "mempool",
+    "self-hosted"
+  ],
+  "scripts": {
+    "start": "node src/index.js",
+    "generate-identity": "node tools/generate-identity.js",
+    "probe": "node tools/mempool-probe.js",
+    "test-client": "node tools/test-client.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@bitcoinerlab/secp256k1": "^2.0.0",
+    "bip32": "^5.0.1",
+    "bitcoinjs-lib": "^7.0.1",
+    "nostr-tools": "^2.24.3",
+    "ws": "^8.21.3"
+  }
+}

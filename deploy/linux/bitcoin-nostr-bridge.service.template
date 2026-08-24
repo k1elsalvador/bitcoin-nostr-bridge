@@ -1,0 +1,24 @@
+[Unit]
+Description=bitcoin-nostr-bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__PROJECT_ROOT__
+ExecStart=__NODE_BIN__ --max-old-space-size=128 src/index.js
+Restart=on-failure
+RestartSec=5
+User=__SERVICE_USER__
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bitcoin-nostr-bridge
+
+# Hard memory ceiling — a safety net on a RAM-constrained host, well above
+# what this workload actually needs (baseline RSS is well under 100MB; see
+# README's memory footprint notes). systemd kills and restarts the process
+# if it's ever exceeded, rather than letting it pressure the rest of the host.
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
