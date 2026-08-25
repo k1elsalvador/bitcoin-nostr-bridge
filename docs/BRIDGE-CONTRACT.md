@@ -71,6 +71,15 @@ Reply:
 `{ok:false, error:"Unknown method"}`. A Query the bridge can't decrypt or parse gets **no reply at
 all** — same silent-drop convention as your own config protocol for malformed/untrusted input.
 
+**Also silently dropped: a Query whose event `created_at` is more than 5 minutes away from the
+bridge's own clock, in either direction.** This is a replay-defense measure added after a security
+review, checked before decryption even happens. It means your sending client's system clock needs
+to be reasonably accurate (normal NTP-synced drift is fine; anything approaching 5 minutes off
+isn't), and a Query shouldn't sit queued somewhere for minutes before actually being published —
+build it and send it close together. There's no error event for this, same as the other silent-drop
+cases above — if a Query seems to vanish with no Reply, a clock check is worth doing before assuming
+it's a relay or decryption problem.
+
 ### Error strings you'll actually see
 
 These aren't a fixed enum — treat `error` as a human-readable string for logs/diagnostics, not
