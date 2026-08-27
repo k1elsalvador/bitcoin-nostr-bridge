@@ -4,7 +4,7 @@ import { finalizeEvent } from "nostr-tools/pure";
 import { nip44 } from "nostr-tools";
 
 import { methods } from "./methods/index.js";
-import { logIncoming, logDropped, logResult } from "./log.js";
+import { logIncoming, logDropped, logResult, logConnectionChange } from "./log.js";
 
 useWebSocketImplementation(WebSocket);
 
@@ -24,10 +24,28 @@ const REPLY_PLAINTEXT_BUDGET = 35000;
 // tag both sides set, so this never rejects a legitimately fresh query.
 const FRESHNESS_WINDOW_SECONDS = 300;
 
+// How often to poll relay connection state for the UP/DOWN log — purely for
+// operator visibility, not what drives reconnection (nostr-tools does that
+// itself once enableReconnect is on, on its own backoff schedule below).
+// Deliberately tighter than the reconnect backoff's own first step (10s) so
+// a typical blip is actually caught and logged, not silently missed between
+// polls.
+const CONNECTION_WATCHDOG_MS = 5000;
+
 export function startBridge(config, deps) {
-  const pool = new SimplePool();
+  // enableReconnect is the actual fix for a real production incident: without
+  // it, nostr-tools' relay client gives up permanently after any hard close
+  // (relay restart, network blip, idle timeout) instead of retrying — and
+  // once that was the only open handle left, the whole process exited
+  // cleanly (no crash, no error) with no further sign of life. Confirmed
+  // against the library's source: reconnect is opt-in, backed by an
+  // indefinite capped-backoff retry loop (10s,10s,10s,20s,20s,30s,60s,...)
+  // once enabled, and re-fires the existing subscription (bumping `since` to
+  // just past the last event seen) on every successful reconnect.
+  const pool = new SimplePool({ enableReconnect: true });
   const { relays, identity, trust, kinds, expirationSeconds } = config;
   const seenEventIds = new Set();
+  const lastKnownConnected = new Map();
 
   function isTrusted(pubkey) {
     return trust.mode === "open" || trust.trustedPubkeys.has(pubkey);
@@ -197,10 +215,30 @@ export function startBridge(config, deps) {
         });
       },
       onclose: (reasons) => {
+        // With enableReconnect on, a transient hard-close (relay restart,
+        // network blip) is handled silently in the background by the retry
+        // loop above and never reaches here — this only fires for a
+        // deliberate stop() or a genuinely unrecoverable close, so it stays
+        // a real signal instead of routine noise.
         console.warn("[bridge] subscription closed:", reasons);
       },
     },
   );
+
+  // Pure observability — reconnection itself is handled entirely by
+  // enableReconnect above; this only makes state transitions visible in the
+  // log, since the library doesn't otherwise surface them anywhere.
+  const watchdog = setInterval(() => {
+    for (const [url, connected] of pool.listConnectionStatus()) {
+      const wasConnected = lastKnownConnected.get(url);
+      if (wasConnected === true && connected === false) {
+        logConnectionChange({ url, connected: false });
+      } else if (wasConnected === false && connected === true) {
+        logConnectionChange({ url, connected: true });
+      }
+      lastKnownConnected.set(url, connected);
+    }
+  }, CONNECTION_WATCHDOG_MS);
 
   console.log(
     `[bridge] listening as ${identity.npub} on kind ${kinds.query} across ${relays.length} relay(s): ${relays.join(", ")}`,
@@ -208,6 +246,7 @@ export function startBridge(config, deps) {
 
   return {
     stop() {
+      clearInterval(watchdog);
       sub.close();
       pool.destroy();
     },

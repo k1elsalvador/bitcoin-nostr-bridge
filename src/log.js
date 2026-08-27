@@ -10,6 +10,7 @@ const CODES = {
   green: "\x1b[32m",
   red: "\x1b[31m",
   cyan: "\x1b[36m",
+  yellow: "\x1b[33m",
 };
 
 function paint(code, text) {
@@ -41,6 +42,19 @@ export function logIncoming({ id, method, pubkey }) {
 
 export function logDropped({ pubkey, reason }) {
   console.log(`${timestamp()} ${paint(CODES.dim, "DROP")} ${" ".repeat(9)} from ${shortHex(pubkey)} ${paint(CODES.dim, reason)}`);
+}
+
+// Only called on an actual state transition (never on the initial connect,
+// never repeated while already in that state) — see bridge.js's connection
+// watchdog. A relay hard-close is otherwise invisible: nostr-tools retries
+// silently in the background once enableReconnect is on, so without this
+// there'd be no trace in the log that anything happened at all.
+export function logConnectionChange({ url, connected }) {
+  const status = connected
+    ? paint(CODES.green, "UP  ")
+    : paint(CODES.yellow, "DOWN");
+  const note = connected ? "reconnected" : "disconnected — auto-reconnecting in the background";
+  console.log(`${timestamp()} ${status} ${" ".repeat(9)} relay ${url} ${note}`);
 }
 
 // fulcrumMs/coreMs are wall-clock time this request spent with at least one
