@@ -97,5 +97,16 @@ export function loadConfig(configPath = path.join(__dirname, "..", "config.json"
       maxGapLimit: cfg.xpub?.maxGapLimit ?? 50,
       maxAddresses: cfg.xpub?.maxAddresses ?? 100,
     },
+    batch: {
+      // Shared by chain.address.stats.batch and chain.address.utxo.batch.
+      // Sized against the same 35,000-byte reply budget bridge.js enforces:
+      // a stats entry is small and fixed-size (~216 bytes, doesn't grow with
+      // activity), but a utxo entry scales with how many UTXOs that address
+      // holds — at a realistic ~2-3 UTXOs/address average, 50 addresses
+      // lands close to the budget's edge. Kept equal across both methods for
+      // one predictable number rather than two, at some unused headroom on
+      // the stats side.
+      maxAddresses: cfg.batch?.maxAddresses ?? 50,
+    },
   };
 }

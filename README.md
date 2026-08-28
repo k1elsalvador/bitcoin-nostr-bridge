@@ -47,6 +47,8 @@ Edit `config.json` (gitignored — never commit real credentials):
   of them.
 - `xpub.{gapLimit,maxGapLimit,maxAddresses}` — `chain.xpub.balance`'s gap-limit scan defaults and
   safety caps. See `docs/BRIDGE-CONTRACT.md` for what each controls.
+- `batch.maxAddresses` — max addresses per `chain.address.stats.batch`/`chain.address.utxo.batch`
+  call. See `docs/BRIDGE-CONTRACT.md` for the sizing rationale.
 
 ## Run
 
@@ -149,6 +151,8 @@ real NIP-44 encryption, real relay):
 npm start &                 # start the bridge first
 node tools/test-client.js chain.address.stats '{"address":"bc1q..."}'
 node tools/test-client.js chain.address.utxo '{"address":"bc1q..."}'
+node tools/test-client.js chain.address.stats.batch '{"addresses":["bc1q...","bc1q..."]}'
+node tools/test-client.js chain.address.utxo.batch '{"addresses":["bc1q...","bc1q..."]}'
 node tools/test-client.js chain.fee.recommended
 node tools/test-client.js chain.tx.status '{"txid":"<64-hex>"}'
 node tools/test-client.js chain.tx.broadcast '{"rawHex":"<signed-tx-hex>"}'

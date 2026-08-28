@@ -33,7 +33,7 @@ changes when that happens, only the npub you address queries to.
 | UTXO response size | Capped, not paginated — see "Known limitations" below. |
 | Relay selection | **Multi-relay from day one**, not single-relay. The bridge connects, subscribes, and publishes replies across every relay in its configured list (currently a single relay — see "What's live right now" above for how to get it), mirroring the resilience model in your own config-protocol doc. |
 
-## Method reference (five from your brief, unchanged, plus one new addition)
+## Method reference (five from your brief, unchanged, plus three new additions)
 
 Namespace `chain.*`. Every result mirrors mempool.space's own JSON shape.
 
@@ -41,17 +41,46 @@ Namespace `chain.*`. Every result mirrors mempool.space's own JSON shape.
 |---|---|---|
 | `chain.address.stats` | `{"address": "bc1q..."}` | `{address, chain_stats: {funded_txo_count, spent_txo_count, tx_count}, mempool_stats: {same}}` |
 | `chain.address.utxo` | `{"address": "bc1q..."}` | array of `{txid, vout, value, status: {confirmed, block_height?, block_hash?}}` |
+| `chain.address.stats.batch` | `{"addresses": ["bc1q...", ...]}` | array of `{address, ok, chain_stats?, mempool_stats?, error?}` — see below |
+| `chain.address.utxo.batch` | `{"addresses": ["bc1q...", ...]}` | array of `{address, ok, utxos?, error?}` — see below |
 | `chain.fee.recommended` | `{}` | `{fastestFee, halfHourFee, hourFee, economyFee, minimumFee}` — all `Int`, sat/vB |
 | `chain.tx.broadcast` | `{"rawHex": "..."}` | `{txid}` |
 | `chain.tx.status` | `{"txid": "<64-hex>"}` | `{txid, status: {confirmed, block_height?, block_hash?}}` |
 | `chain.xpub.balance` | `{"xpub": "xpub.../ypub.../zpub...", "gapLimit"?: Int}` | `{xpub, gapLimit, addressesScanned, complete, chain_stats: {...}, mempool_stats: {...}, utxos: [...]}` — see below |
 
-All six verified end-to-end against this deployment's live Fulcrum + Bitcoin Core node, over the
+All verified end-to-end against this deployment's live Fulcrum + Bitcoin Core node, over the
 real relay, using a throwaway test keypair speaking the exact envelope below — including that
 `chain.address.stats`'s computed `funded_txo_count`/`spent_txo_count`/`tx_count` match
 mempool.space's own numbers exactly for the same address (94/94/166 in the test run), and that
 `chain.xpub.balance` rediscovered a real, independently-verified wallet UTXO at the correct
 derivation path (see below). `value` and fee amounts are satoshis (`Int`), same as mempool.space.
+
+### `chain.address.stats.batch` / `chain.address.utxo.batch` — querying a specific address list
+
+Added for a use case `chain.xpub.balance` can't cover well: if you maintain your own cache of
+which addresses currently matter (the live frontier, plus any recently-spent-but-not-yet-confirmed
+ones), these let you ask about exactly that set in one round trip, instead of one
+`chain.address.*` call per address or a full gap-limit re-derivation via `chain.xpub.balance`. This
+is also the way around `chain.xpub.balance`'s 100-used-address ceiling for a wallet that's grown
+past it — you decide the scope, the bridge doesn't have to auto-discover it.
+
+- `params.addresses` — non-empty array of address strings, **max 50**. Exceeding it is a validation
+  error (`ok:false`), not a silent truncation. 50 was sized against the same 35,000-byte reply
+  budget `chain.xpub.balance`'s response is bounded by: a stats entry is small and fixed-size
+  (~216 bytes regardless of activity), but a UTXO entry scales with how many UTXOs that address
+  holds — at a realistic ~2-3 UTXOs/address average, 50 addresses lands close to that budget's
+  edge. Configurable server-side (`batch.maxAddresses`) if 50 doesn't fit your usage.
+- **Result is one entry per input address, in the same order**, each either
+  `{address, ok:true, chain_stats, mempool_stats}` / `{address, ok:true, utxos}` (identical shape to
+  the corresponding single-address method's own result, just with `ok` added) or
+  `{address, ok:false, error}`. **One bad address doesn't fail the whole batch** — e.g. an address
+  that happens to exceed `chain.address.stats`'s own 500-tx-history cap just gets `ok:false` in its
+  own slot, everything else in the batch still resolves normally. The outer envelope is still
+  `ok:true` as long as the batch request itself was valid.
+- Verified with a mixed batch (one normal address, one deliberately over the 500-tx cap) — confirmed
+  the good entry resolves normally while the bad one gets a scoped error, and separately confirmed
+  `chain.address.utxo.batch` handles a garbage/invalid address string the same way rather than
+  failing the request.
 
 ### Envelope (unchanged)
 

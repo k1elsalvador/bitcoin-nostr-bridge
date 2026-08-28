@@ -47,5 +47,8 @@
     "gapLimit": 30,
     "maxGapLimit": 50,
     "maxAddresses": 100
+  },
+  "batch": {
+    "maxAddresses": 50
   }
 }

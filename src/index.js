@@ -20,6 +20,7 @@ const deps = {
   xpubGapLimit: config.xpub.gapLimit,
   xpubMaxGapLimit: config.xpub.maxGapLimit,
   maxAddresses: config.xpub.maxAddresses,
+  maxBatchAddresses: config.batch.maxAddresses,
   confTargets: config.fee.confTargets,
   estimateMode: config.fee.estimateMode,
   floorSatVb: config.fee.floorSatVb,
