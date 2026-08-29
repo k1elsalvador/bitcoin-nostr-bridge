@@ -21,8 +21,16 @@ function timestamp() {
   return new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
 }
 
+// 20 chars, not 8 — callers are free to pick any opaque id format, and a
+// short prefix collides badly against a timestamp-prefixed scheme (e.g.
+// "q-<millis>-<random>"): two genuinely distinct ids can share the same
+// first 8 characters for hours, since only the low-order digits of a
+// millisecond timestamp change over any short session. 20 chars covers a
+// full 13-digit millis prefix plus enough of whatever follows it to make
+// that collision effectively impossible, while staying a literal substring
+// of the real id (grep-able against it, unlike a hash of it would be).
 function shortId(id) {
-  return (id ?? "").slice(0, 8).padEnd(8);
+  return (id ?? "").slice(0, 20).padEnd(20);
 }
 
 function shortHex(hex) {
@@ -41,7 +49,7 @@ export function logIncoming({ id, method, pubkey }) {
 }
 
 export function logDropped({ pubkey, reason }) {
-  console.log(`${timestamp()} ${paint(CODES.dim, "DROP")} ${" ".repeat(9)} from ${shortHex(pubkey)} ${paint(CODES.dim, reason)}`);
+  console.log(`${timestamp()} ${paint(CODES.dim, "DROP")} ${" ".repeat(21)} from ${shortHex(pubkey)} ${paint(CODES.dim, reason)}`);
 }
 
 // Only called on an actual state transition (never on the initial connect,
@@ -54,7 +62,7 @@ export function logConnectionChange({ url, connected }) {
     ? paint(CODES.green, "UP  ")
     : paint(CODES.yellow, "DOWN");
   const note = connected ? "reconnected" : "disconnected — auto-reconnecting in the background";
-  console.log(`${timestamp()} ${status} ${" ".repeat(9)} relay ${url} ${note}`);
+  console.log(`${timestamp()} ${status} ${" ".repeat(21)} relay ${url} ${note}`);
 }
 
 // fulcrumMs/coreMs are wall-clock time this request spent with at least one

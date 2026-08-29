@@ -78,7 +78,13 @@ export function loadConfig(configPath = path.join(__dirname, "..", "config.json"
         hourFee: 6,
         economyFee: 144,
       },
-      estimateMode: cfg.fee?.estimateMode ?? "CONSERVATIVE",
+      // ECONOMICAL tracks the live mempool more closely than CONSERVATIVE's
+      // built-in safety margin; switched after CONSERVATIVE reported
+      // meaningfully higher tiers than mempool.space during a quiet mempool
+      // (e.g. 4/3/2/1/1 vs mempool.space's flat 1/1/1/1/1 at the same time).
+      // Absolute difference is small in real terms, but this tracks the
+      // public reference more closely for easier sanity-checking.
+      estimateMode: cfg.fee?.estimateMode ?? "ECONOMICAL",
       floorSatVb: cfg.fee?.floorSatVb ?? 1,
     },
     utxo: {

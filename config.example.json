@@ -34,7 +34,7 @@
       "hourFee": 6,
       "economyFee": 144
     },
-    "estimateMode": "CONSERVATIVE",
+    "estimateMode": "ECONOMICAL",
     "floorSatVb": 1
   },
   "utxo": {
