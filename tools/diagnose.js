@@ -5,14 +5,17 @@
  * that's broken).
  *
  * Usage:
- *   node tools/diagnose.js [check] [--no-e2e]   one-shot health check
+ *   node tools/diagnose.js [check] [--no-e2e] [--debug] [--service <name>]
  *   node tools/diagnose.js watch [--verbose] [--reply-timeout <sec>]
  *   (either mode also takes --config <path>, default ./config.json)
  *
  * check — Bitcoin Core RPC, Fulcrum, each relay (connect, NIP-11, read, write),
  *   then a per-relay end-to-end round trip (chain.fee.recommended sent to ONE
  *   relay at a time), which pinpoints a relay the bridge isn't hearing on.
- *   Exits 0 if everything passed, 1 otherwise.
+ *   Exits 0 if everything passed, 1 otherwise. On any failure (or with
+ *   --debug) it also dumps the systemd service's status, recent journal,
+ *   connection/subscription history, and the deployed git commit — run it
+ *   with sudo so journalctl can read the service's log.
  *
  * watch — live tap on every configured relay: prints each event addressed to
  *   the bridge's npub and each reply the bridge publishes, both decrypted with
@@ -25,6 +28,9 @@ import { Relay, useWebSocketImplementation } from "nostr-tools/relay";
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import { nip44 } from "nostr-tools";
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 import { loadConfig } from "../src/config.js";
 import { FulcrumClient } from "../src/fulcrum.js";
@@ -36,6 +42,8 @@ useWebSocketImplementation(WebSocket);
 const FRESHNESS_WINDOW_SECONDS = 300;
 const STEP_TIMEOUT_MS = 8000;
 const E2E_TIMEOUT_MS = 15000;
+const DEFAULT_SERVICE = "bitcoin-nostr-bridge";
+const PROJECT_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const isTTY = Boolean(process.stdout.isTTY);
 const CODES = { reset: "\x1b[0m", dim: "\x1b[2m", green: "\x1b[32m", red: "\x1b[31m", cyan: "\x1b[36m", yellow: "\x1b[33m", magenta: "\x1b[35m" };
@@ -301,6 +309,41 @@ async function e2eViaRelay(config, url) {
   }
 }
 
+// Same commands an operator would run by hand after a failed check, so the
+// output of one diagnose run is enough to work out what happened.
+function dumpServiceDebug(service) {
+  const sections = [
+    [`systemctl status ${service}`, "systemctl", ["status", service, "--no-pager", "-l"]],
+    [`journalctl -u ${service} -n 60`, "journalctl", ["-u", service, "-n", "60", "--no-pager", "-l"]],
+    [
+      `journalctl -u ${service}  (connection/subscription history)`,
+      "journalctl",
+      ["-u", service, "--no-pager", "-l", "--grep", "listening as|subscription|DOWN|UP  |shutting down|Error"],
+      (out) => out.split("\n").slice(-30).join("\n"),
+    ],
+    ["deployed commit", "git", ["-c", `safe.directory=${PROJECT_ROOT}`, "-C", PROJECT_ROOT, "log", "-1", "--format=%h %ad %s", "--date=iso"]],
+    ["working tree changes", "git", ["-c", `safe.directory=${PROJECT_ROOT}`, "-C", PROJECT_ROOT, "status", "--short"]],
+  ];
+
+  console.log(paint(CODES.yellow, `\n===== debug info (service: ${service}) =====`));
+  for (const [title, cmd, cmdArgs, post] of sections) {
+    console.log(paint(CODES.cyan, `\n--- ${title}`));
+    let out;
+    try {
+      out = execFileSync(cmd, cmdArgs, { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] });
+    } catch (err) {
+      // systemctl status exits non-zero for a stopped/failed unit but still
+      // prints exactly what we want; journalctl --grep exits 1 on no match.
+      out = `${err.stdout ?? ""}${err.stderr ?? ""}` || errText(err);
+    }
+    out = (post ? post(out) : out).trimEnd();
+    console.log(out || paint(CODES.dim, "(no output)"));
+  }
+  if (typeof process.getuid === "function" && process.getuid() !== 0) {
+    console.log(paint(CODES.dim, "\n(not root — if the journal sections are empty or denied, re-run with sudo)"));
+  }
+}
+
 async function runCheck(args) {
   const config = loadConfig(configPath(args));
   console.log(`Bridge identity  ${config.identity.npub}`);
@@ -327,6 +370,10 @@ async function runCheck(args) {
   }
 
   console.log(failures === 0 ? paint(CODES.green, "\nAll checks passed.") : paint(CODES.red, `\n${failures} check(s) failed.`));
+  if (failures > 0 || args.includes("--debug")) {
+    if (process.platform === "linux") dumpServiceDebug(parseFlag(args, "--service", DEFAULT_SERVICE));
+    else console.log(paint(CODES.dim, "(service debug dump is systemd-only; check the service log manually)"));
+  }
   process.exit(failures === 0 ? 0 : 1);
 }
 
@@ -491,6 +538,6 @@ const mode = args[0] && !args[0].startsWith("--") ? args[0] : "check";
 if (mode === "check") runCheck(args);
 else if (mode === "watch") runWatch(args);
 else {
-  console.error("Usage: node tools/diagnose.js [check [--no-e2e] | watch [--verbose] [--reply-timeout <sec>]] [--config <path>]");
+  console.error("Usage: node tools/diagnose.js [check [--no-e2e] [--debug] [--service <name>] | watch [--verbose] [--reply-timeout <sec>]] [--config <path>]");
   process.exit(1);
 }

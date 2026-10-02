@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import { SimplePool, useWebSocketImplementation } from "nostr-tools/pool";
 import { finalizeEvent } from "nostr-tools/pure";
+import { normalizeURL } from "nostr-tools/utils";
 import { nip44 } from "nostr-tools";
 
 import { methods } from "./methods/index.js";
@@ -31,6 +32,11 @@ const FRESHNESS_WINDOW_SECONDS = 300;
 // a typical blip is actually caught and logged, not silently missed between
 // polls.
 const CONNECTION_WATCHDOG_MS = 5000;
+
+// Backoff for re-establishing a subscription nostr-tools has given up on
+// (see subscribeRelay). Capped at 60s so a relay that comes back is picked
+// up within a minute, indefinitely.
+const RESUBSCRIBE_BACKOFF_MS = [5000, 10000, 30000, 60000];
 
 export function startBridge(config, deps) {
   // enableReconnect is the actual fix for a real production incident: without
@@ -204,32 +210,69 @@ export function startBridge(config, deps) {
     });
   }
 
-  const since = Math.floor(Date.now() / 1000);
-  const sub = pool.subscribeMany(
-    relays,
-    { kinds: [kinds.query], "#p": [identity.pubkeyHex], since },
-    {
-      onevent: (event) => {
-        handleQueryEvent(event).catch((err) => {
-          console.error("[bridge] unhandled error processing query event:", err);
-        });
-      },
-      onclose: (reasons) => {
-        // With enableReconnect on, a transient hard-close (relay restart,
-        // network blip) is handled silently in the background by the retry
-        // loop above and never reaches here — this only fires for a
-        // deliberate stop() or a genuinely unrecoverable close, so it stays
-        // a real signal instead of routine noise.
-        console.warn("[bridge] subscription closed:", reasons);
-      },
-    },
-  );
+  // One subscription per relay, re-established whenever nostr-tools gives up
+  // on it. enableReconnect alone isn't enough: it only covers a connection
+  // that succeeded at least once. If the *first* connect fails (relay or
+  // DNS briefly unreachable right when the service starts — a real
+  // production incident, after a routine restart), the library marks the
+  // relay skipReconnection, drops it from the pool, and closes the
+  // subscription for good, leaving the process alive but deaf with nothing
+  // in the log beyond a single "connection failed" line.
+  const subs = new Map(); // relay url -> current subscription
+  const retryTimers = new Map(); // relay url -> pending resubscribe timer
+  let stopping = false;
 
-  // Pure observability — reconnection itself is handled entirely by
-  // enableReconnect above; this only makes state transitions visible in the
-  // log, since the library doesn't otherwise surface them anywhere.
+  function subscribeRelay(url, attempt, since) {
+    const sub = pool.subscribeMany(
+      [url],
+      { kinds: [kinds.query], "#p": [identity.pubkeyHex], since },
+      {
+        onevent: (event) => {
+          handleQueryEvent(event).catch((err) => {
+            console.error("[bridge] unhandled error processing query event:", err);
+          });
+        },
+        oneose: () => {
+          // The pool also fires oneose right before onclose on a failed
+          // connect, so only a real live connection resets the backoff.
+          if (pool.listConnectionStatus().get(normalizeURL(url))) attempt = 0;
+        },
+        onclose: (reasons) => {
+          if (stopping) return;
+          const delay = RESUBSCRIBE_BACKOFF_MS[Math.min(attempt, RESUBSCRIBE_BACKOFF_MS.length - 1)];
+          console.warn(
+            `[bridge] subscription on ${url} closed (${reasons.map((r) => r.reason).join("; ")}) — resubscribing in ${delay / 1000}s`,
+          );
+          retryTimers.set(
+            url,
+            setTimeout(() => {
+              retryTimers.delete(url);
+              // Look back over the freshness window so queries sent while we
+              // were deaf still get answered if they're within it; the
+              // seenEventIds dedup keeps anything already handled from being
+              // answered twice.
+              const resubscribeSince = Math.floor(Date.now() / 1000) - FRESHNESS_WINDOW_SECONDS;
+              subscribeRelay(url, attempt + 1, resubscribeSince);
+            }, delay),
+          );
+        },
+      },
+    );
+    subs.set(url, sub);
+  }
+
+  const startSince = Math.floor(Date.now() / 1000);
+  for (const url of relays) subscribeRelay(url, 0, startSince);
+
+  // Pure observability — makes connection state transitions visible in the
+  // log, since the library doesn't otherwise surface them anywhere. Walks the
+  // configured relays rather than the pool's own list, because a relay whose
+  // connect failed is removed from the pool entirely and would otherwise
+  // never show up here at all.
   const watchdog = setInterval(() => {
-    for (const [url, connected] of pool.listConnectionStatus()) {
+    const status = pool.listConnectionStatus();
+    for (const url of relays) {
+      const connected = status.get(normalizeURL(url)) ?? false;
       const wasConnected = lastKnownConnected.get(url);
       if (wasConnected === true && connected === false) {
         logConnectionChange({ url, connected: false });
@@ -246,8 +289,10 @@ export function startBridge(config, deps) {
 
   return {
     stop() {
+      stopping = true;
       clearInterval(watchdog);
-      sub.close();
+      for (const timer of retryTimers.values()) clearTimeout(timer);
+      for (const sub of subs.values()) sub.close();
       pool.destroy();
     },
   };

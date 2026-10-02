@@ -183,7 +183,10 @@ node tools/diagnose.js watch      # live tap: every query to the bridge's npub +
 (connects, answers, tip matches Core), and each relay (NIP-11, clock skew, websocket, read). It then
 sends a real `chain.fee.recommended` query through **one relay at a time**. If a relay accepted and
 stored the query but no reply came back, the bridge isn't hearing that relay. Pass `--no-e2e` to
-skip that step. The step is skipped automatically in `allowlist` mode, because the bridge silently
+skip that step. When any check fails (or with `--debug`), it also prints the service's
+`systemctl status`, the last 60 journal lines, the bridge's connection/subscription history, and
+the deployed commit. Run it with `sudo` so it can read the journal, and pass `--service <name>` if
+the unit isn't `bitcoin-nostr-bridge`. The step is skipped automatically in `allowlist` mode, because the bridge silently
 drops the tool's throwaway key.
 
 **`watch`** subscribes to every relay in `config.json` and decrypts both directions with the
