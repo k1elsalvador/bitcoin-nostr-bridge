@@ -27,7 +27,8 @@
     "start": "node src/index.js",
     "generate-identity": "node tools/generate-identity.js",
     "probe": "node tools/mempool-probe.js",
-    "test-client": "node tools/test-client.js"
+    "test-client": "node tools/test-client.js",
+    "diagnose": "node tools/diagnose.js"
   },
   "engines": {
     "node": ">=18.0.0"

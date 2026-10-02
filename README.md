@@ -169,6 +169,38 @@ fixtures for the same address/txid to confirm shape parity.
 — point it at a real signed transaction's hex when you have one, or a garbage hex string to confirm
 Bitcoin Core's rejection path comes back as a readable `error`.
 
+## Diagnosing "my query timed out"
+
+`tools/diagnose.js` runs independently of the bridge process. It reads the same `config.json`, so
+run it on the bridge host itself:
+
+```sh
+node tools/diagnose.js            # one-shot health check (exit 0 = all passed)
+node tools/diagnose.js watch      # live tap: every query to the bridge's npub + every reply
+```
+
+**`check`** tests Bitcoin Core RPC (reachable, authenticated, synced, `txindex`, peers), Fulcrum
+(connects, answers, tip matches Core), and each relay (NIP-11, clock skew, websocket, read). It then
+sends a real `chain.fee.recommended` query through **one relay at a time**. If a relay accepted and
+stored the query but no reply came back, the bridge isn't hearing that relay. Pass `--no-e2e` to
+skip that step. The step is skipped automatically in `allowlist` mode, because the bridge silently
+drops the tool's throwaway key.
+
+**`watch`** subscribes to every relay in `config.json` and decrypts both directions with the
+bridge's own key. It prints a line per event:
+
+- `QRY` — a well-formed query was seen on a relay.
+- `BAD` — the bridge will silently drop it. The line says why: `created_at` outside the ±300s
+  freshness window (sender clock), untrusted pubkey, wrong kind, or undecryptable (wrong npub, or
+  NIP-04 instead of NIP-44).
+- `RPL` / `RPL!` — the bridge's reply (ok / error), with latency since the query was seen.
+- `MISS` — no reply within `--reply-timeout` seconds (default 15).
+
+`--verbose` prints full decrypted envelopes. Both modes take `--config <path>`.
+
+If a query shows up as `QRY` in `watch` but never as `IN` in the bridge's own log, the bridge
+isn't receiving from that relay. If it shows `IN` with no `OK`/`ERR`, a backend call is hanging.
+
 ## Project layout
 
 - `src/chain/` — backend logic (Fulcrum/Bitcoin Core queries), no Nostr awareness. Pure
